@@ -545,3 +545,33 @@ html {
   font-size: 14px;
   color: #888;
 }
+.user-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+#user-id {
+  margin-right: 10px;
+}
+
+.btn-logout {
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 14px;
+  margin: 4px 2px;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background-color 0.3s;
+}
+
+.btn-logout:hover {
+  background-color: #45a049;
+}

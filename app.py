@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, url_for, redirect
+from flask import Flask,send_file, render_template, request, jsonify, session, url_for, redirect
 from flask_migrate import Migrate
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
@@ -19,10 +19,13 @@ from flask_admin import BaseView, Admin, AdminIndexView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.form import SecureForm
 from flask.cli import with_appcontext
+from pytz import timezone
 import click
 
 app = Flask(__name__)
 CORS(app)
+
+KST = timezone('Asia/Seoul')
 
 app.config['SECRET_KEY'] = os.urandom(24)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
@@ -76,8 +79,8 @@ class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversation.id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    is_user = db.Column(db.Boolean, nullable=False)  # True if user message, False if AI message
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    is_user = db.Column(db.Boolean, nullable=False)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(KST))
 
 class SecureModelView(ModelView):
     form_base_class = SecureForm
@@ -122,9 +125,21 @@ def login():
     data = request.json
     user = User.query.filter_by(username=data['username']).first()
     if user and check_password_hash(user.password, data['password']):
-        login_user(user)
-        return jsonify({"success": True})
+        login_user(user, remember=True)
+        return jsonify({"success": True, "username": user.username})
     return jsonify({"success": False})
+
+@app.route('/check_login', methods=['GET'])
+def check_login():
+    if current_user.is_authenticated:
+        return jsonify({"logged_in": True, "username": current_user.username})
+    return jsonify({"logged_in": False})
+
+@app.route('/logout', methods=['GET', 'POST'])
+@login_required
+def logout():
+    logout_user()
+    return jsonify({"success": True})
 
 @app.route('/signup', methods=['POST'])
 def signup():
@@ -148,11 +163,6 @@ def signup():
     
     return jsonify({"success": True, "message": "User created successfully"})
 
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    return jsonify({"success": True})
 
 @app.route('/chat', methods=['POST'])
 @login_required
@@ -239,7 +249,7 @@ def get_history():
     history = []
     for conv in conversations:
         messages = sorted(conv.messages, key=attrgetter('timestamp'))
-        grouped_messages = groupby(messages, key=lambda m: m.timestamp.date())
+        grouped_messages = groupby(messages, key=lambda m: m.timestamp.astimezone(KST).date())
         for date, msgs in grouped_messages:
             history.append({
                 'date': date.strftime('%Y-%m-%d'),
@@ -300,6 +310,24 @@ def reset_password():
         db.session.commit()
         return jsonify({"message": "Password reset successful"})
     return jsonify({"message": "Invalid or expired token"}), 400
+
+
+@app.route('/admin/backup_db')
+@login_required
+def backup_db():
+    if not current_user.is_admin:
+        return jsonify({"error": "Unauthorized access"}), 403
+    
+    try:
+        # instance 폴더 내의 데이터베이스 파일 경로를 구성합니다
+        db_path = os.path.join(app.instance_path, 'users.db')
+        
+        if not os.path.exists(db_path):
+            return jsonify({"error": "Database file not found"}), 404
+
+        return send_file(db_path, as_attachment=True, download_name='users.db')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @click.command('create-admin')
 @with_appcontext
