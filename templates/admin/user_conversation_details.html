@@ -1,0 +1,16 @@
+{% extends 'admin/master.html' %} {% block body %}
+<h2>Conversations for {{ user.username }}</h2>
+{% for conversation in conversations %}
+<h3>Conversation started at {{ conversation.start_time }}</h3>
+<ul>
+  {% for message in conversation.messages %}
+  <li>
+    <strong>{% if message.is_user %}User{% else %}AI{% endif %}:</strong>
+    {{ message.content }}
+    <small>({{ message.timestamp }})</small>
+  </li>
+  {% endfor %}
+</ul>
+{% endfor %}
+<a href="{{ url_for('user_conversations.index') }}">Back to Users List</a>
+{% endblock %}

@@ -307,7 +307,7 @@ html {
   z-index: 1;
   top: 0;
   right: 0;
-  background-color: #111;
+  background-color: #ffffff;
   overflow-x: hidden;
   transition: 0.5s;
   padding-top: 60px;
@@ -318,13 +318,13 @@ html {
   padding: 8px 8px 8px 32px;
   text-decoration: none;
   font-size: 25px;
-  color: #818181;
+  color: #4caf50;
   display: block;
   transition: 0.3s;
 }
 
 .sidebar a:hover {
-  color: #f1f1f1;
+  color: #000000;
 }
 
 .sidebar #close-sidebar {
@@ -336,7 +336,7 @@ html {
 }
 
 #user-id {
-  color: white;
+  color: #4caf50;
   padding: 16px;
   font-size: 18px;
   border-bottom: 1px solid #818181;
@@ -345,11 +345,11 @@ html {
 /* 히스토리 모달 스타일 */
 #history-modal .modal-content {
   width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 20px;
-  box-sizing: border-box;
-  max-width: none;
+  max-width: 480px; /* 채팅방의 최대 너비와 동일하게 설정 */
+  height: 100vh; /* 전체 화면 높이 */
+  margin: 0 auto; /* 중앙 정렬 */
+  display: flex;
+  flex-direction: column;
 }
 
 #history-container {
@@ -536,4 +536,12 @@ html {
 }
 #show-signup {
   margin-left: 10px;
+}
+.history-date {
+  text-align: center;
+  padding: 10px 0;
+  margin: 20px 0;
+  position: relative;
+  font-size: 14px;
+  color: #888;
 }

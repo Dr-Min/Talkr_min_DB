@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, url_for
+from flask import Flask, render_template, request, jsonify, session, url_for, redirect
 from flask_migrate import Migrate
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
@@ -6,6 +6,8 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from openai import OpenAI
 from dotenv import load_dotenv
+from itertools import groupby
+from operator import attrgetter
 import os
 import base64
 from sqlalchemy import desc
@@ -13,6 +15,11 @@ from datetime import datetime, timedelta
 import secrets
 from flask_mail import Mail, Message as FlaskMessage
 from threading import Thread
+from flask_admin import BaseView, Admin, AdminIndexView, expose
+from flask_admin.contrib.sqla import ModelView
+from flask_admin.form import SecureForm
+from flask.cli import with_appcontext
+import click
 
 app = Flask(__name__)
 CORS(app)
@@ -47,6 +54,7 @@ class User(UserMixin, db.Model):
     conversations = db.relationship('Conversation', backref='user', lazy=True)
     reset_token = db.Column(db.String(100), unique=True)
     reset_token_expiration = db.Column(db.DateTime)
+    is_admin = db.Column(db.Boolean, default=False)
 
     def set_reset_token(self):
         self.reset_token = secrets.token_urlsafe(32)
@@ -71,9 +79,28 @@ class Message(db.Model):
     is_user = db.Column(db.Boolean, nullable=False)  # True if user message, False if AI message
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
+class SecureModelView(ModelView):
+    form_base_class = SecureForm
+    def is_accessible(self):
+        return current_user.is_authenticated and current_user.is_admin
+
+class MyAdminIndexView(AdminIndexView):
+    @expose('/')
+    def index(self):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            return redirect(url_for('login', next=request.url))
+        return super(MyAdminIndexView, self).index()
+
+admin = Admin(app, name='TalKR Admin', template_mode='bootstrap3', index_view=MyAdminIndexView())
+admin.add_view(SecureModelView(User, db.session))
+admin.add_view(SecureModelView(Conversation, db.session))
+admin.add_view(SecureModelView(Message, db.session))
+
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
+
+
 
 system_message = {
     "role": "system",
@@ -211,10 +238,13 @@ def get_history():
     
     history = []
     for conv in conversations:
-        history.append({
-            'date': conv.start_time.strftime('%Y-%m-%d'),
-            'messages': [{'content': msg.content, 'is_user': msg.is_user, 'timestamp': msg.timestamp.strftime('%H:%M')} for msg in conv.messages]
-        })
+        messages = sorted(conv.messages, key=attrgetter('timestamp'))
+        grouped_messages = groupby(messages, key=lambda m: m.timestamp.date())
+        for date, msgs in grouped_messages:
+            history.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'messages': [{'content': msg.content, 'is_user': msg.is_user, 'timestamp': msg.timestamp.strftime('%H:%M')} for msg in msgs]
+            })
     
     return jsonify({'history': history})
 
@@ -270,6 +300,44 @@ def reset_password():
         db.session.commit()
         return jsonify({"message": "Password reset successful"})
     return jsonify({"message": "Invalid or expired token"}), 400
+
+@click.command('create-admin')
+@with_appcontext
+def create_admin_command():
+    """Create an admin user"""
+    username = click.prompt('Enter admin username', type=str)
+    email = click.prompt('Enter admin email', type=str)
+    password = click.prompt('Enter admin password', type=str, hide_input=True, confirmation_prompt=True)
+    
+    existing_user = User.query.filter_by(email=email).first()
+    if existing_user:
+        if click.confirm('User with this email already exists. Do you want to make this user an admin?'):
+            existing_user.is_admin = True
+            db.session.commit()
+            click.echo('User updated to admin successfully')
+        else:
+            click.echo('Admin user creation cancelled')
+    else:
+        admin_user = User(username=username, email=email, password=generate_password_hash(password), is_admin=True)
+        db.session.add(admin_user)
+        db.session.commit()
+        click.echo('Admin user created successfully')
+
+app.cli.add_command(create_admin_command)
+
+class UserConversationsView(BaseView):
+    @expose('/')
+    def index(self):
+        users = User.query.all()
+        return self.render('admin/user_conversations.html', users=users)
+
+    @expose('/<int:user_id>')
+    def user_conversations(self, user_id):
+        user = User.query.get_or_404(user_id)
+        conversations = Conversation.query.filter_by(user_id=user_id).order_by(desc(Conversation.start_time)).all()
+        return self.render('admin/user_conversation_details.html', user=user, conversations=conversations)
+
+admin.add_view(UserConversationsView(name='User Conversations', endpoint='user_conversations'))
 
 if __name__ == '__main__':
     with app.app_context():

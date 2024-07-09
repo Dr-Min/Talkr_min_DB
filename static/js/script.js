@@ -511,6 +511,38 @@ document.addEventListener("DOMContentLoaded", function () {
     userId.textContent = `User: ${username}`;
   }
 
+  function displayHistory(history) {
+    console.log("Displaying history", history);
+    if (!historyContainer) {
+      console.error("History container not found");
+      return;
+    }
+    historyContainer.innerHTML = "";
+    let currentDate = null;
+    history.forEach((item) => {
+      if (item.date !== currentDate) {
+        currentDate = item.date;
+        const dateElement = document.createElement("div");
+        dateElement.className = "history-date";
+        dateElement.textContent = currentDate;
+        historyContainer.appendChild(dateElement);
+      }
+      item.messages.forEach((msg) => {
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `message ${
+          msg.is_user ? "user-message" : "bot-message"
+        }`;
+        messageDiv.innerHTML = `
+                <div class="message-bubble">
+                    ${msg.content}
+                </div>
+                <div class="message-time">${msg.timestamp}</div>
+            `;
+        historyContainer.appendChild(messageDiv);
+      });
+    });
+  }
+
   function loadHistory(date = null) {
     if (isLoadingHistory) return;
     isLoadingHistory = true;
@@ -519,18 +551,7 @@ document.addEventListener("DOMContentLoaded", function () {
     fetch(`/get_history?date=${date || ""}`)
       .then((response) => response.json())
       .then((data) => {
-        data.history.forEach((conv) => {
-          if (conv.date !== currentDate) {
-            currentDate = conv.date;
-            const dateElement = document.createElement("div");
-            dateElement.className = "history-date";
-            dateElement.textContent = currentDate;
-            historyContainer.appendChild(dateElement);
-          }
-          conv.messages.forEach((msg) => {
-            addHistoryMessage(msg);
-          });
-        });
+        displayHistory(data.history);
         isLoadingHistory = false;
         loadingHistory.style.display = "none";
       })
@@ -623,9 +644,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   showHistory.addEventListener("click", function () {
     historyModal.style.display = "block";
-    historyContainer.innerHTML = "";
+    historyContainer.innerHTML = "<p>Loading history...</p>";
     currentDate = null;
     loadHistory();
+    console.log("History modal opened"); // 디버깅용 로그
   });
 
   closeHistory.addEventListener("click", function () {
