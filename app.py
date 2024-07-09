@@ -330,12 +330,27 @@ class UserConversationsView(BaseView):
     def index(self):
         users = User.query.all()
         return self.render('admin/user_conversations.html', users=users)
-
+    
     @expose('/<int:user_id>')
     def user_conversations(self, user_id):
         user = User.query.get_or_404(user_id)
-        conversations = Conversation.query.filter_by(user_id=user_id).order_by(desc(Conversation.start_time)).all()
-        return self.render('admin/user_conversation_details.html', user=user, conversations=conversations)
+        conversations = Conversation.query.filter_by(user_id=user_id).all()
+        
+        # 모든 메시지를 하나의 리스트로 모읍니다
+        all_messages = []
+        for conv in conversations:
+            all_messages.extend(conv.messages)
+        
+        # 메시지를 날짜별로 정렬합니다
+        all_messages.sort(key=attrgetter('timestamp'))
+        
+        # 날짜별로 메시지를 그룹화합니다
+        grouped_messages = groupby(all_messages, key=lambda m: m.timestamp.date())
+        
+        # 그룹화된 메시지를 딕셔너리로 변환합니다
+        grouped_conversations = {date: list(messages) for date, messages in grouped_messages}
+        
+        return self.render('admin/user_conversation_details.html', user=user, grouped_conversations=grouped_conversations)
 
 admin.add_view(UserConversationsView(name='User Conversations', endpoint='user_conversations'))
 
