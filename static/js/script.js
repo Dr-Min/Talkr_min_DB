@@ -29,6 +29,18 @@ document.addEventListener("DOMContentLoaded", function () {
   const backToLoginLink = document.getElementById("back-to-login");
   const resetPasswordBtn = document.getElementById("reset-password-btn");
 
+  const showReports = document.getElementById("show-reports");
+  const reportsModal = document.getElementById("reports-modal");
+  const closeReports = reportsModal.querySelector(".close");
+  const reportsContainer = document.getElementById("reports-container");
+
+  const showVocabulary = document.getElementById("show-vocabulary");
+  const vocabularyModal = document.getElementById("vocabulary-modal");
+  const closeVocabulary = vocabularyModal.querySelector(".close");
+  const vocabularyContainer = document.getElementById("vocabulary-container");
+
+  let messageCount = 0;
+
   let recognition;
   let isMicrophoneActive = false;
   let isAITalking = false;
@@ -49,6 +61,8 @@ document.addEventListener("DOMContentLoaded", function () {
   let messageQueue = [];
   let pendingMessage = null;
 
+  const REPORT_INTERVAL = 2; // 이 값을 변경하여 보고서 생성 간격을 조정할 수 있습니다.
+
   function sendMessage(message, isVoiceInput = false) {
     if (message && message.trim() !== "") {
       if (isProcessing) {
@@ -57,11 +71,14 @@ document.addEventListener("DOMContentLoaded", function () {
       } else {
         messageQueue.push(message);
         processMessageQueue();
+        messageCount++;
+        if (messageCount % REPORT_INTERVAL === 0) {
+          generateReport();
+        }
       }
-      // 메시지를 전송한 후 항상 텍스트 필드를 비웁니다.
       userInput.value = "";
       if (isVoiceInput) {
-        lastProcessedResult = ""; // 음성 인식 결과 초기화
+        lastProcessedResult = "";
       }
     }
   }
@@ -860,6 +877,113 @@ document.addEventListener("DOMContentLoaded", function () {
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", logout);
+  }
+
+  function checkMessageCount() {
+    messageCount++;
+    if (messageCount % 2 === 0) {
+      generateReport();
+    }
+  }
+
+  function generateReport() {
+    fetch("/generate_report", {
+      method: "POST",
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success) {
+          alert("New report generated!");
+          loadReports();
+        }
+      })
+      .catch((error) => console.error("Error generating report:", error));
+  }
+
+  showReports.addEventListener("click", function () {
+    reportsModal.style.display = "block";
+    loadReports();
+  });
+
+  closeReports.addEventListener("click", function () {
+    reportsModal.style.display = "none";
+  });
+
+  function loadReports() {
+    fetch("/get_reports")
+      .then((response) => response.json())
+      .then((reports) => {
+        reportsContainer.innerHTML = "";
+        reports.forEach((report) => {
+          const reportButton = document.createElement("button");
+          reportButton.textContent = `Report ${report.report_number}`;
+          reportButton.onclick = () => showReportContent(report);
+          reportsContainer.appendChild(reportButton);
+        });
+      })
+      .catch((error) => console.error("Error loading reports:", error));
+  }
+
+  function showReportContent(report) {
+    const contentDiv = document.createElement("div");
+    contentDiv.innerHTML = `
+      <h3>Report ${report.report_number}</h3>
+      <p>Created: ${report.timestamp}</p>
+      <pre>${report.content}</pre>
+    `;
+
+    const closeButton = document.createElement("button");
+    closeButton.textContent = "Close";
+    closeButton.onclick = () => loadReports();
+
+    const deleteButton = document.createElement("button");
+    deleteButton.textContent = "Delete Report";
+    deleteButton.onclick = () => deleteReport(report.id);
+
+    reportsContainer.innerHTML = "";
+    reportsContainer.appendChild(contentDiv);
+    reportsContainer.appendChild(closeButton);
+    reportsContainer.appendChild(deleteButton);
+  }
+
+  function deleteReport(reportId) {
+    if (confirm("Are you sure you want to delete this report?")) {
+      fetch(`/delete_report/${reportId}`, { method: "DELETE" })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.success) {
+            loadReports();
+          } else {
+            alert("Failed to delete report");
+          }
+        })
+        .catch((error) => console.error("Error deleting report:", error));
+    }
+  }
+
+  showVocabulary.addEventListener("click", function () {
+    vocabularyModal.style.display = "block";
+    loadVocabulary();
+  });
+
+  closeVocabulary.addEventListener("click", function () {
+    vocabularyModal.style.display = "none";
+  });
+
+  function loadVocabulary() {
+    fetch("/get_vocabulary")
+      .then((response) => response.json())
+      .then((vocabulary) => {
+        vocabularyContainer.innerHTML = "";
+        vocabulary.forEach((item) => {
+          const wordElement = document.createElement("div");
+          wordElement.innerHTML = `
+            <strong>${item.word}</strong>: ${item.count}
+          `;
+          vocabularyContainer.appendChild(wordElement);
+        });
+      })
+      .catch((error) => console.error("Error loading vocabulary:", error));
   }
 
   setupSpeechRecognition();

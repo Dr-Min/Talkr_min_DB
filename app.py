@@ -69,6 +69,9 @@ class User(UserMixin, db.Model):
     reset_token = db.Column(db.String(100), unique=True)
     reset_token_expiration = db.Column(db.DateTime)
     is_admin = db.Column(db.Boolean, default=False)
+    reports = db.relationship('Report', backref='user', lazy=True)
+    messages = db.relationship('Message', backref='user', lazy=True)
+
 
     def set_reset_token(self):
         self.reset_token = secrets.token_urlsafe(32)
@@ -94,6 +97,7 @@ class Message(db.Model):
     content = db.Column(db.Text, nullable=False)
     is_user = db.Column(db.Boolean, nullable=False)
     timestamp = db.Column(db.DateTime, default=lambda: datetime.now(KST))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
 # 관리자 뷰 보안 설정
 class SecureModelView(ModelView):
@@ -277,8 +281,9 @@ def chat():
             db.session.commit()
 
         # 사용자 메시지를 데이터베이스에 저장합니다.
-        user_message = Message(conversation_id=active_conversation.id, content=user_message_content, is_user=True)
+        user_message = Message(conversation_id=active_conversation.id, content=user_message_content, is_user=True, user_id=current_user.id)
         db.session.add(user_message)
+
 
         # 최근 20개의 메시지를 가져옵니다.
         recent_messages = Message.query.filter_by(conversation_id=active_conversation.id).order_by(Message.timestamp.desc()).limit(20).all()
@@ -314,7 +319,7 @@ def chat():
         ai_message_content = response.choices[0].message.content
 
         # AI 응답을 데이터베이스에 저장
-        ai_message = Message(conversation_id=active_conversation.id, content=ai_message_content, is_user=False)
+        ai_message = Message(conversation_id=active_conversation.id, content=ai_message_content, is_user=False, user_id=current_user.id)
         db.session.add(ai_message)
         db.session.commit()
 
@@ -337,6 +342,7 @@ def chat():
             'success': True
         })
     except Exception as e:
+        db.session.rollback()  # 오류 발생 시 트랜잭션 롤백
         print(f"Error in chat processing: {str(e)}")
         return jsonify({'message': 'Sorry, an error occurred.', 'success': False}), 500
 
@@ -533,6 +539,71 @@ class UserConversationsView(BaseView):
         return self.render('admin/user_conversation_details.html', user=user, grouped_conversations=grouped_conversations)
 
 admin.add_view(UserConversationsView(name='User Conversations', endpoint='user_conversations'))
+
+
+# @app.route('/generate_report', methods=['POST'])
+# @login_required
+# def generate_report():
+#     try:
+#         user_messages = Message.query.filter_by(user_id=current_user.id, is_user=True).order_by(Message.timestamp.desc()).limit(10).all()
+#         user_messages = [msg.content for msg in user_messages]
+        
+#         if not user_messages:
+#             return jsonify({"success": False, "error": "No messages found for the user"}), 400
+        
+#         # OpenAI API를 사용하여 보고서 생성
+#         response = client.chat.completions.create(
+#             model="gpt-4-turbo",
+#             messages=[
+#                 {"role": "system", "content": "You are a Korean language expert. Analyze the following messages and provide feedback. If there are grammatical errors or unnatural expressions, format your response as follows:\n\nIncorrect sentence: []\nReason: []\nRecommended native speaker sentence: []\n\nIf the sentence is perfect or particularly well-expressed, provide positive feedback such as 'This expression is excellent.' or 'This sentence is perfectly constructed.'. Always clearly distinguish between correct and incorrect sentences."},
+#                 {"role": "user", "content": f"Analyze these messages:\n{' '.join(user_messages)}"}
+#             ]
+#         )
+        
+#         report_content = response.choices[0].message.content
+        
+#         # 새 보고서 저장
+#         next_report_number = Report.query.filter_by(user_id=current_user.id).count() + 1
+#         new_report = Report(user_id=current_user.id, content=report_content, report_number=next_report_number)
+#         db.session.add(new_report)
+#         db.session.commit()
+        
+#         return jsonify({"success": True, "report": report_content})
+#     except Exception as e:
+#         db.session.rollback()
+#         return jsonify({"success": False, "error": str(e)}), 500
+
+# @app.route('/get_reports', methods=['GET'])
+# @login_required
+# def get_reports():
+#     reports = Report.query.filter_by(user_id=current_user.id).order_by(Report.report_number.desc()).all()
+#     return jsonify([{
+#         "id": report.id,
+#         "content": report.content,
+#         "timestamp": report.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+#         "report_number": report.report_number
+#     } for report in reports])
+
+# @app.route('/get_vocabulary', methods=['GET'])
+# @login_required
+# def get_vocabulary():
+#     user_messages = Message.query.filter_by(user_id=current_user.id).order_by(Message.timestamp.desc()).limit(100).all()
+#     words = ' '.join([msg.content for msg in user_messages]).split()
+#     word_counts = Counter(words)
+#     vocabulary = [{"word": word, "count": count} for word, count in word_counts.most_common(50)]
+#     return jsonify(vocabulary)
+
+class Report(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    report_number = db.Column(db.Integer, nullable=False)
+
+    @classmethod
+    def get_next_report_number(cls, user_id):
+        last_report = cls.query.filter_by(user_id=user_id).order_by(cls.report_number.desc()).first()
+        return (last_report.report_number + 1) if last_report else 1
 
 if __name__ == '__main__':
     with app.app_context():

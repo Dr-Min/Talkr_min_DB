@@ -575,3 +575,22 @@ html {
 .btn-logout:hover {
   background-color: #45a049;
 }
+#reports-container button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+#reports-container button:hover {
+  background-color: #45a049;
+}
+
+#reports-container pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
